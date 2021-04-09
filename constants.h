@@ -1,0 +1,11 @@
+#define API_ENDPOINT "localhost"
+#define LID_ID 1
+#define API_PATH "/api/v1/"
+#define HEALTH_ENDPOINT "/health"
+#define API_PORT 3000
+#define UPLOAD_BATCH_SIZE 25
+#define UPLOADS_PER_HOUR 4
+#define RECORDINGS_PER_MINUTE 10
+#define SAMPLES_PER_MINUTE 10
+#define VITALS "vitals"
+#define FEEDINGS  "feedings"
