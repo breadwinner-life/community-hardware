@@ -31,7 +31,7 @@ Adafruit_VL6180X vl = Adafruit_VL6180X();
 
 Adafruit_MCP9808 tempsensor = Adafruit_MCP9808();
 
-String tempOffset;
+float tempOffset = 1;
 
 /* Wifi Setup */
 #include "constants.h"
@@ -54,8 +54,10 @@ int sensorValue = 0;
 
 /* NeoPixel Setup */
 int neoPixelPin = 15;
-int red, green, blue;
-Adafruit_NeoPixel pixels(2, neoPixelPin, NEO_GRB + NEO_KHZ800);
+
+int defaultRed = 0, defaultGreen = 0, defaultBlue = 0, defaultBrightness = 0;
+
+Adafruit_NeoPixel pixels(1, neoPixelPin, NEO_RGB + NEO_KHZ800);
 
 /* Sensor Readings */
 float temp, pressure, humidity, altitude, lux;
@@ -75,9 +77,6 @@ const int NTP_PACKET_SIZE = 48; // NTP time is in the first 48 bytes of message
 byte packetBuffer[NTP_PACKET_SIZE]; //buffer to hold incoming & outgoing packets
 
 /* Timing Config */
-unsigned long previousRecordingMillis = 0;
-const long recordingInterval = (60.0/RECORDINGS_PER_MINUTE) * 1000;
-
 unsigned long previousSampleMillis = 0;
 const long sampleInterval = (60.0/SAMPLES_PER_MINUTE) * 1000;
 
@@ -89,8 +88,9 @@ char jsonToSend[5000];
 int uploadAttempts = 0;
 bool lastUploadAttempt = true;
 
-const String outgoingDir = "/outgoing/";
-const String uploadedDir = "/uploaded/";
+const String outgoingDir = "/outgoing";
+const String uploadedDir = "/uploaded";
+
 String jsonPayload;
 
 /* SD Card */
@@ -103,12 +103,26 @@ void setup() {
 
   pixels.begin();
   pixels.show();
-  pixels.setBrightness(100);
-  pixels.clear();
 
   // Turn on Lux LED to illuminate sensor:
-  pixels.setPixelColor(1, pixels.Color(255, 255, 255));
-  pixels.show();
+  // pixels.setPixelColor(0, pixels.Color(255, 75, 0));
+
+  for (int x = 0; x <= 128; x++) {
+    pixels.setPixelColor(0, pixels.Color(255, 75, 0));
+    pixels.setBrightness(x);
+    pixels.show();
+    delay(5);
+  }
+
+  for (int x = 32; x <= 64; x += 4) {
+    pixels.clear();
+    pixels.show();
+    delay(pow(1.1, x));
+
+    pixels.setPixelColor(0, pixels.Color(255, 75, 0));
+    pixels.show();
+    delay(pow(1.1, x));
+  }
 
   while (!Serial) { ; }
 
@@ -124,14 +138,15 @@ void setup() {
 
   initializeSDCard();
 
-  getTemperatureOffset();
+  pixels.clear();
+
 }
 
 void loop() {
   sampleAndRecordTimer();
   uploadTimer();
   feedingButtonCheck();
-  blinkLED('off');
+  defaultLED();
 }
 
 void connectToNet() {
@@ -191,25 +206,43 @@ void initializeSDCard() {
     while (1);
   }
   Serial.println(F("SD card and reader initialized."));
-  SD.mkdir(outgoingDir);
-  SD.mkdir(uploadedDir);
+
+  Serial.print("Trying to create directory: ");
+  Serial.println(outgoingDir);
+  if (SD.mkdir(outgoingDir)) {
+    Serial.print(outgoingDir);
+    Serial.println(" successfully created.");
+  } else {
+    Serial.println("Couldn't create ");
+    Serial.print(outgoingDir);
+  }
+
+  Serial.print("Trying to create directory: ");
+  Serial.println(uploadedDir);
+  if (SD.mkdir(uploadedDir)) {
+    Serial.print(uploadedDir);
+    Serial.println(" successfully created.");
+  } else {
+    Serial.println("Couldn't create ");
+    Serial.print(uploadedDir);
+  }
 }
 
 void getTemperatureOffset() {
-  File tempOffsetFile = SD.open("/temperature_offset", FILE_READ);
+  // File tempOffsetFile = SD.open("/temperature_offset", FILE_READ);
 
-  if (tempOffsetFile) {
-    while(tempOffsetFile.available()) {
-      char c = tempOffsetFile.read();
-      // Serial.println(c);
-      tempOffset = tempOffset + c;
-    }
-    Serial.print("Temp offset: " );
-    Serial.println(tempOffset);
-  } else {
-    Serial.println(F("Temp offset file is empty or unavailable."));
-  }
-  tempOffsetFile.close();
+  // if (tempOffsetFile) {
+  //   while(tempOffsetFile.available()) {
+  //     char c = tempOffsetFile.read();
+  //     // Serial.println(c);
+  //     tempOffset = tempOffset + c;
+  //   }
+  //   Serial.print("Temp offset: " );
+  //   Serial.println(tempOffset);
+  // } else {
+  //   Serial.println(F("Temp offset file is empty or unavailable."));
+  // }
+  // tempOffsetFile.close();
 }
 
 void feedingButtonCheck() {
@@ -255,51 +288,46 @@ void uploadTimer() {
   }
 }
 
-void blinkLED(char color) {
+void blinkLED(String color) {
 
-  switch (color) {
-    case 'red': // Red
-      red = 255;
-      green = 0;
-      blue = 0;
-      break;
-    case 'green': // Green
-      red = 0;
-      green = 255;
-      blue = 0;
-      break;
-    case 'blue': // Blue
-      red = 0;
-      green = 0;
-      blue = 255;
-      break;
-    case 'orange': // Orange
-      red = 120;
-      green = 79;
-      blue = 0;
-      break;
-    case 'off':
-      red = 0;
-      green = 0;
-      blue = 0;
-      break;
-    default:
-      red = 0;
-      green = 0;
-      blue = 0;
-      break;
+  int red, green, blue;
+
+  if (color == "red") {
+    red = 255;
+    green = 0;
+    blue = 0;
+  } else if (color == "green") {
+    red = 0;
+    green = 255;
+    blue = 0;
+  } else if (color == "blue") {
+    red = 0;
+    green = 0;
+    blue = 255;
+  } else if (color == "orange") {
+    red = 255;
+    green = 75;
+    blue = 0;
+  } else {
+    red = 0;
+    green = 0;
+    blue = 0;
   }
 
+  pixels.setBrightness(128);
   pixels.setPixelColor(0, pixels.Color(red, green, blue));
   pixels.show();
-  if (color != 'off') {
+
+  if (color != "off") {
     delay(200);
-    pixels.clear();
-    pixels.show();
-  } else {
-    pixels.clear();
-    pixels.show();
   }
+}
+
+void defaultLED() {
+
+  pixels.setBrightness(defaultBrightness);
+  pixels.setPixelColor(0, pixels.Color(defaultRed, defaultGreen, defaultBlue));
+  pixels.show();
 }
 
 void sampleAndRecordTimer() {
@@ -307,9 +335,10 @@ void sampleAndRecordTimer() {
   unsigned long currentSampleMillis = millis();
   if (currentSampleMillis - previousSampleMillis >= sampleInterval) {
     previousSampleMillis = currentSampleMillis;
-    blinkLED('orange');
+    blinkLED("orange");
     sampleSensors();
     recordSensorData();
+    blinkLED("green");
   }
 }
 
@@ -368,10 +397,16 @@ bool sampleVL6180() {
 bool sampleMCP9808() {
   tempsensor.wake();
 
-  temp = tempsensor.readTempF() - tempOffset.toFloat();
+  // These delay()'s seem necessary to get different readings
+  // See: https://forums.adafruit.com/viewtopic.php?f=19&t=86088
+  delay(253);
+
+  temp = tempsensor.readTempF() - tempOffset;
 
   // shutdown MSP9808 - power consumption ~0.1 mikro Ampere, stops temperature
   tempsensor.shutdown_wake(1);
+
+  delay(1000);
 
   return true;
 }
@@ -398,7 +433,7 @@ bool uploadData(String dataName) {
   }
 
   Serial.println(F("Opening output file..."));
-  const String localFilePath = outgoingDir + dataName;
+  const String localFilePath = outgoingDir + "/" + dataName;
 
   File localFile = SD.open(localFilePath, FILE_READ);
 
@@ -457,7 +492,7 @@ bool uploadData(String dataName) {
 
     doc.clear();
 
-    String archiveFilename = uploadedDir + year() + printDigits(month()) + printDigits(day());
+    String archiveFilename = uploadedDir + "/" + year() + printDigits(month()) + printDigits(day());
 
     File archiveFile = SD.open(archiveFilename, FILE_APPEND);
 
@@ -509,7 +544,7 @@ bool uploadData(String dataName) {
 
   doc.clear();
 
-  blinkLED('off');
+  blinkLED("off");
 
   return true;
 }
@@ -523,7 +558,7 @@ void recordSensorData() {
 
   DynamicJsonDocument jsonDoc(JSON_OBJECT_SIZE(10));
 
-  jsonDoc["lid_id"] = LID_ID;
+  jsonDoc["device_id"] = DEVICE_ID;
   jsonDoc["observed_at"] = (long)timeStamp;
   jsonDoc["wifi_rssi"] = WiFi.RSSI();
 
@@ -537,7 +572,7 @@ void recordSensorData() {
   jsonDoc.clear();
 
   // SdFile::dateTimeCallback(dateTime);
-  const String localFilePath = outgoingDir + VITALS;
+  const String localFilePath = outgoingDir + "/" + VITALS;
   File dataFile = SD.open(localFilePath, FILE_APPEND);
 
   if (dataFile) {
@@ -547,17 +582,17 @@ void recordSensorData() {
     Serial.print(observation);
     Serial.print(F(" to "));
     Serial.println(localFilePath);
-    blinkLED('green');
+    blinkLED("green");
   } else {
     Serial.print(F("Error opening: "));
     Serial.println(localFilePath);
-    blinkLED('red');
+    blinkLED("red");
   }
 }
 
 void recordFeeding() {
   Serial.println(F("Feeding button pressed!"));
-  blinkLED('blue');
+  blinkLED("blue");
 
   if (timeStatus() != timeNotSet) {
     if (now() != timeStamp) {
@@ -567,14 +602,14 @@ void recordFeeding() {
 
   StaticJsonDocument<200> jsonDoc;
 
-  jsonDoc["lid_id"] = LID_ID;
+  jsonDoc["device_id"] = DEVICE_ID;
   jsonDoc["fed_at"] = (long)timeStamp;
 
   String feeding;
   serializeJson(jsonDoc, feeding);
 
   // SdFile::dateTimeCallback(dateTime);
-  const String localFilePath = outgoingDir + FEEDINGS;
+  const String localFilePath = outgoingDir + "/" + FEEDINGS;
   File dataFile = SD.open(localFilePath, FILE_APPEND);
 
   if (dataFile) {
@@ -584,11 +619,11 @@ void recordFeeding() {
     Serial.print(feeding);
     Serial.print(F(" to "));
     Serial.println(localFilePath);
-    blinkLED('green');
+    blinkLED("green");
   } else {
     Serial.print(F("Error opening file: "));
     Serial.println(localFilePath);
-    blinkLED('red');
+    blinkLED("red");
   }
 
   jsonDoc.clear();
@@ -630,7 +665,7 @@ bool endpointOnline() {
 
 bool sendMetric(String path) {
 
-  blinkLED('blue');
+  blinkLED("blue");
 
   Serial.print(F("POST'ing to "));
   Serial.print(API_ENDPOINT);
@@ -647,18 +682,27 @@ bool sendMetric(String path) {
   Serial.print(F("Status code: "));
   Serial.println(statusCode);
 
-  if (response != "null") {
-    Serial.print(F("Response: "));
-    Serial.println(response);
+  Serial.print(F("Response: "));
+  Serial.println(response);
+
+  StaticJsonDocument<200> doc;
+  DeserializationError error = deserializeJson(doc, response);
+
+  if (doc.containsKey("red")) {
+    defaultRed = doc["red"];
+    defaultBlue = doc["blue"];
+    defaultGreen = doc["green"];
+    defaultBrightness = doc["brightness"];
+    defaultLED();
   }
 
   if (statusCode == 200) {
-    Serial.println("Upload OK!        ");
-    blinkLED('green');
+    Serial.println("Upload OK!");
+    blinkLED("green");
     return true;
   } else {
     Serial.println("Upload Error!");
-    blinkLED('red');
+    blinkLED("red");
     return false;
   }
 }
