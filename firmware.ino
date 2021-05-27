@@ -7,6 +7,8 @@
 #include <WebServer.h>
 #include <WiFiManager.h>
 
+#include <ESP32Ping.h>
+
 #include <Adafruit_NeoPixel.h>
 
 #include <SPI.h>
@@ -31,8 +33,6 @@ Adafruit_VL6180X vl = Adafruit_VL6180X();
 
 Adafruit_MCP9808 tempsensor = Adafruit_MCP9808();
 
-float tempOffset = 1;
-
 /* Wifi Setup */
 #include "constants.h"
 int wifiStatus = WL_IDLE_STATUS;
@@ -55,7 +55,7 @@ int sensorValue = 0;
 /* NeoPixel Setup */
 int neoPixelPin = 15;
 
-int defaultRed = 0, defaultGreen = 0, defaultBlue = 0, defaultBrightness = 0;
+int defaultRed = 0, defaultGreen = 0, defaultBlue = 0, defaultBrightness = 100;
 
 Adafruit_NeoPixel pixels(1, neoPixelPin, NEO_RGB + NEO_KHZ800);
 
@@ -154,6 +154,8 @@ void connectToNet() {
   WiFiManager wifiManager;
   wifiManager.autoConnect("Breadwinner");
 
+  wifiManager.setConnectTimeout(30);
+
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
     Serial.print(".");
@@ -228,21 +230,21 @@ void initializeSDCard() {
   }
 }
 
-void getTemperatureOffset() {
-  // File tempOffsetFile = SD.open("/temperature_offset", FILE_READ);
+void pingEndpoint() {
+  bool pingResult = Ping.ping(API_ENDPOINT);
 
-  // if (tempOffsetFile) {
-  //   while(tempOffsetFile.available()) {
-  //     char c = tempOffsetFile.read();
-  //     // Serial.println(c);
-  //     tempOffset = tempOffset + c;
-  //   }
-  //   Serial.print("Temp offset: " );
-  //   Serial.println(tempOffset);
-  // } else {
-  //   Serial.println(F("Temp offset file is empty or unavailable."));
-  // }
-  // tempOffsetFile.close();
+  if (pingResult) {
+    Serial.print("Endpoint ping time: ");
+    Serial.print(Ping.averageTime());
+    Serial.println("ms");
+    defaultRed = 0;
+    blinkLED("blue");
+  } else {
+    Serial.println("Endpoint ping timeout.");
+    defaultRed = 255;
+    defaultLED();
+    // blinkLED("red");
+  }
 }
 
 void feedingButtonCheck() {
@@ -272,7 +274,6 @@ void uploadTimer() {
     } else {
       // Serial.println(F("Resetting wifi..."));
       Serial.println(F("Trying to reconnect..."));
-      WiFi.begin();
       delay(1000);
       if (uploadAttempts >= 10) {
         Serial.println(F("Max upload attempts reached."));
@@ -314,7 +315,7 @@ void blinkLED(String color) {
     blue = 0;
   }
 
-  pixels.setBrightness(128);
+  pixels.setBrightness(defaultBrightness);
   pixels.setPixelColor(0, pixels.Color(red, green, blue));
   pixels.show();
 
@@ -324,7 +325,6 @@ void blinkLED(String color) {
 }
 
 void defaultLED() {
-
   pixels.setBrightness(defaultBrightness);
   pixels.setPixelColor(0, pixels.Color(defaultRed, defaultGreen, defaultBlue));
   pixels.show();
@@ -339,6 +339,7 @@ void sampleAndRecordTimer() {
     sampleSensors();
     recordSensorData();
     blinkLED("green");
+    pingEndpoint();
   }
 }
 
@@ -401,7 +402,7 @@ bool sampleMCP9808() {
   // See: https://forums.adafruit.com/viewtopic.php?f=19&t=86088
   delay(253);
 
-  temp = tempsensor.readTempF() - tempOffset;
+  temp = tempsensor.readTempF();
 
   // shutdown MSP9808 - power consumption ~0.1 mikro Ampere, stops temperature
   tempsensor.shutdown_wake(1);
@@ -561,6 +562,7 @@ void recordSensorData() {
   jsonDoc["device_id"] = DEVICE_ID;
   jsonDoc["observed_at"] = (long)timeStamp;
   jsonDoc["wifi_rssi"] = WiFi.RSSI();
+  jsonDoc["ping_time"] = Ping.averageTime();
 
   jsonDoc["temperature"] = temp;
   jsonDoc["height"] = height;
@@ -758,6 +760,7 @@ time_t getNtpTime() {
     }
   }
   Serial.println(F("No NTP Response :-("));
+  blinkLED("red");
   return 0; // return 0 if unable to get the time
 }
 
