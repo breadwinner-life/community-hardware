@@ -88,6 +88,10 @@ char jsonToSend[5000];
 int uploadAttempts = 0;
 bool lastUploadAttempt = true;
 
+float pingTime;
+unsigned long previousPingMillis = 0;
+const long pingInterval = (60.0/PINGS_PER_MINUTE) * 1000;
+
 const String outgoingDir = "/outgoing";
 const String uploadedDir = "/uploaded";
 
@@ -145,6 +149,7 @@ void setup() {
 void loop() {
   sampleAndRecordTimer();
   uploadTimer();
+  pingTimer();
   feedingButtonCheck();
   defaultLED();
 }
@@ -243,7 +248,7 @@ void pingEndpoint() {
     Serial.println("Endpoint ping timeout.");
     defaultRed = 255;
     defaultLED();
-    // blinkLED("red");
+    blinkLED("red");
   }
 }
 
@@ -275,8 +280,9 @@ void uploadTimer() {
       // Serial.println(F("Resetting wifi..."));
       Serial.println(F("Trying to reconnect..."));
       delay(1000);
-      if (uploadAttempts >= 10) {
-        Serial.println(F("Max upload attempts reached."));
+      if (uploadAttempts >= 5) {
+        Serial.println(F("Max upload attempts reached, restarting."));
+        ESP.restart();
       } else {
         Serial.print(F("Old uploadInterval: "));
         Serial.println(uploadInterval);
@@ -286,6 +292,15 @@ void uploadTimer() {
       }
       uploadAttempts++;
     }
+  }
+}
+
+void pingTimer() {
+  unsigned long currentPingMillis = millis();
+  if (currentPingMillis - previousPingMillis >= pingInterval) {
+    previousPingMillis = currentPingMillis;
+    pingEndpoint();
+    pingTime = Ping.averageTime();
   }
 }
 
@@ -320,7 +335,7 @@ void blinkLED(String color) {
   pixels.show();
 
   if (color != "off") {
-    delay(200);
+    delay(100);
   }
 }
 
@@ -339,7 +354,6 @@ void sampleAndRecordTimer() {
     sampleSensors();
     recordSensorData();
     blinkLED("green");
-    pingEndpoint();
   }
 }
 
@@ -407,7 +421,7 @@ bool sampleMCP9808() {
   // shutdown MSP9808 - power consumption ~0.1 mikro Ampere, stops temperature
   tempsensor.shutdown_wake(1);
 
-  delay(1000);
+  // delay(1000);
 
   return true;
 }
@@ -562,7 +576,9 @@ void recordSensorData() {
   jsonDoc["device_id"] = DEVICE_ID;
   jsonDoc["observed_at"] = (long)timeStamp;
   jsonDoc["wifi_rssi"] = WiFi.RSSI();
-  jsonDoc["ping_time"] = Ping.averageTime();
+  if (pingTime != NULL) {
+    jsonDoc["ping_time"] = pingTime;
+  }
 
   jsonDoc["temperature"] = temp;
   jsonDoc["height"] = height;
